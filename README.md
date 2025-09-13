@@ -13,42 +13,33 @@ A Sol DeWit's Open Cube encoder model
 
 (*) Space coverage ratios: 
 ```
-# Base 16 (Hexadecimal)     : 7.4% coverage
-# Base 64 (default)         : 29.5% coverage
-# Base 128 (ASCII)          : 59% coverage
+ Base 16 (Hexadecimal)     : 7.4% coverage
+ Base 64 (default)         : 29.5% coverage
+ Base 128 (ASCII)          : 59% coverage
 ```
 
-# Workflow
-- Define Cube Structure  
-    Vertices: 8 points in {0,1}³  
-    Edges: 12 edge pairs connecting vertices  
+```mermaid
+flowchart TD
+    A[Define Cube Structure<br>8 Vertices, 12 Edges] --> B[Generate 24 Rotations<br>CubeRotations: SO3 Group]
 
-- Generate Rotations (CubeRotations)  
-    Build all 24 valid cube rotations (SO(3))  
-    Each rotation is a matrix with axis permutations + sign flips  
-    Rotate vertices around cube center (0.5,0.5,0.5)  
-    Map rotated vertices to original indices  
-    Map edges to new positions → edge permutation  
+    B --> C[Generate All Edge Subsets<br>Powerset: 4095 non-empty sets]
 
-- Generate All Edge Subsets (CubeLibrary)  
-    Produce powerset of 12 edges (all 4095 non-empty subsets)  
+    C --> D{For Each Subset}
+    D --> E[Apply All 24 Rotations]
+    E --> F[Compute Canonical Form<br>Lexicographically Min. Tuple]
+    F --> G{Canonical Rep.<br>in Library Set?}
+
+    G -- No --> H[Add to Library<br>Assign New ID]
+    G -- Yes --> I[Discard as Duplicate]
     
-- Compute Canonical Form (Cube.canonical)  
-    Apply all 24 rotations to the subset  
-    Convert each rotated edge set to sorted tuple  
-    Pick lexicographically minimal tuple → canonical representation  
+    H --> J[Add to Master List]
+    I --> J
 
-- Store Unique Canonical Cubes (CubeLibrary)  
-    Keep a seen set of canonical edge frozensets  
-    Add new canonical cubes to library if not already present  
-
-- Assign IDs  
-    Sequential ID assignment for each unique canonical cube  
-
-- Output  
-    Library contains n-amount (selected) canonical cubes (one per rotational equivalence class)  
-    Each cube stores: edges (frozenset) + ID  
-
+    D --> K[All Subsets Processed?]
+    J --> K
+    K -- No --> D
+    K -- Yes --> L[Output Library<br>N Unique Canonical Cubes]
+```
 # Usage
 ```
 python encoder.py -h
