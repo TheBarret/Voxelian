@@ -4,19 +4,26 @@ A Sol DeWit's Open Cube encoder model
 
 <img width="930" height="674" alt="image" src="https://github.com/user-attachments/assets/f6f2a905-ac3c-48d0-a63f-d6fa0bd41a52" />  
 
-
-
+##
 > Screenshot shows the equivalent of 'Hello, World'  
 > Using Sol DeWit's open cube model for data encoding using 217 unique cubes, not the theoretical estimate 144.  
 > This encoder utilizes base64 to condense the character table as an intermediate layer and have a flexible input range,  
 > this does result in only 29.5% coverage(*) space.  
 
-(*) Space coverage ratios: 
+# Encoding Density & Coverage
+
+<img width="300" alt="image" src="https://github.com/user-attachments/assets/68aded04-b967-4282-8626-6de11c8c6eac" />  
+
+The encoder's base principle is what determines the coverage length within the cube space available.  
+You could technically introduce an encryption layer as well providing you with extra security.  
+
 ```
  Base 16 (Hexadecimal)     : 7.4% coverage
  Base 64 (default)         : 29.5% coverage
  Base 128 (ASCII)          : 59% coverage
 ```
+
+## Logic In-Depth
 
 ```mermaid
 flowchart TD
