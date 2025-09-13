@@ -6,7 +6,7 @@ A Sol DeWit's Open Cube encoder model
 
 
 
-> Screenshot shows the equivalent of 'Hello, World'
+> Screenshot shows the equivalent of 'Hello, World'  
 > Using Sol DeWit's open cube model for data encoding using 217 unique cubes, not the theoretical estimate 144.  
 > This encoder utilizes base64 to condense the character table as an intermediate layer and have a flexible input range,  
 > this does result in only 29.5% coverage(*) space.  
