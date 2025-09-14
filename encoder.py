@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils import CubeSerializer, CubeMetadata, generate_random_message, visualize_message, write_file, read_file
 
 """
-Voxelian Encoder - Professional Data Encoding System
+Voxelian Encoder
 Using Sol DeWit's cube model for data encoding with 217 canonical cubes.
 
 Mathematical Foundation:
@@ -351,7 +351,7 @@ class VoxelianCLI:
     def create_parser(self) -> argparse.ArgumentParser:
         """Create command-line argument parser."""
         parser = argparse.ArgumentParser(
-            description="Voxelian Encoder - Professional Data Encoding System",
+            description="Voxelian Encoder",
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog=f"""
 Examples:
@@ -587,5 +587,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     sys.exit(main())
