@@ -19,11 +19,20 @@ def write_file(path: str, data: bytes):
         f.flush()
         os.fsync(f.fileno())
 
-def generate_random_message(length: int = 512) -> str:
-    """Generate pseudo-random text message of fixed size."""
-    return ''.join(secrets.choice(B64_CHARS) for _ in range(length))
+def read_file(filename):
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        raise ValueError(f"File '{filename}' not found")
+    except Exception as e:
+        raise ValueError(f"Error reading file: {e}")
 
-def visualize_message(encoder, message: bytes):
+def generate_random_message(length: int = 512, table: str = "") -> str:
+    """Generate pseudo-random text message of fixed size."""
+    return ''.join(secrets.choice(table) for _ in range(length))
+
+def visualize_message(encoder, message: bytes, cube_ids):
     """
     Scientific visualization of binary data as 3D cube representations.
     Shows the spatial encoding of bytes through cube edge configurations.
@@ -34,7 +43,7 @@ def visualize_message(encoder, message: bytes):
     
     # Base64 encode the message for processing
     b64_string = message #base64.b64encode(message).decode('ascii')
-    encoded_ids = encoder.encode_data(message)
+    encoded_ids = cube_ids #encoder.encode_text(message)
     
     base_vertices = np.array(encoder.rotations.vertices)
     
@@ -48,7 +57,7 @@ def visualize_message(encoder, message: bytes):
     edge_colors = ['#ff7f0e', '#d62728', '#2ca02c', '#9467bd']  # Distinct colors for edge density
     
     for i, (b64_char, cube_id) in enumerate(zip(b64_string, encoded_ids)):
-        cube = encoder.decode_id(cube_id)
+        cube = encoder.get_cube_by_id(cube_id)
         
         # grid position with enhanced spacing
         row = i // cubes_per_row
@@ -87,8 +96,8 @@ def visualize_message(encoder, message: bytes):
                  f'• Base64 chars: {b64_size}\n' 
                  f'• Cube instances: {len(encoded_ids)}\n'
                  f'• Unique cube IDs: {len(set(encoded_ids))}\n'
-                 f'• Edge density range: {min(len(encoder.decode_id(cid).edges) for cid in encoded_ids)}-'
-                 f'{max(len(encoder.decode_id(cid).edges) for cid in encoded_ids)} edges')
+                 f'• Edge density range: {min(len(encoder.get_cube_by_id(cid).edges) for cid in encoded_ids)}-'
+                 f'{max(len(encoder.get_cube_by_id(cid).edges) for cid in encoded_ids)} edges')
     
     # position statistics in corner
     fig.text(0.02, 0.98, stats_text, fontsize=9, verticalalignment='top',
@@ -106,7 +115,7 @@ def visualize_message(encoder, message: bytes):
     ax.view_init(elev=20, azim=15)
     
     plt.tight_layout()
-    plt.show()
+    plt.savefig('output.png')
 
 class SerializationError(Exception):
     # exception for serialization/deserialization errors

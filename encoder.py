@@ -3,303 +3,589 @@ import argparse
 import unittest
 import base64
 import numpy as np
-from typing import List
-from itertools import chain, combinations, product, permutations
+from typing import List, Dict, Set, Tuple, Optional
+from itertools import chain, combinations
+import sys
+import os
 
-# utilities
-from utils import CubeSerializer, CubeMetadata, generate_random_message, visualize_message, write_file
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from utils import CubeSerializer, CubeMetadata, generate_random_message, visualize_message, write_file, read_file
 
 """
-Library     : Voxelian Encoder
-Description : A Sol DeWit's storage model for data encoding using 217 unique cubes,
-             (not the theoretical estimate 144).
+Voxelian Encoder - Professional Data Encoding System
+Using Sol DeWit's cube model for data encoding with 217 canonical cubes.
 
-Workflow :
-    Define Cube Structure
-        Vertices: 8 points in {0,1}³
-        Edges: 12 edge pairs connecting vertices
-
-    Generate Rotations (CubeRotations)
-        Build all 24 valid cube rotations (SO(3))
-        Each rotation is a matrix with axis permutations + sign flips
-        Rotate vertices around cube center (0.5,0.5,0.5)
-        Map rotated vertices to original indices
-        Map edges to new positions → edge permutation
-
-    Generate All Edge Subsets (CubeLibrary)
-        Produce powerset of 12 edges (all 4095 non-empty subsets)
-        
-    Compute Canonical Form (Cube.canonical)
-        Apply all 24 rotations to the subset
-        Convert each rotated edge set to sorted tuple
-        Pick lexicographically minimal tuple → canonical representation
-
-    Store Unique Canonical Cubes (CubeLibrary)
-        Keep a seen set of canonical edge frozensets
-        Add new canonical cubes to library if not already present
-
-    Assign IDs
-        Sequential ID assignment for each unique canonical cube
-
-    Output
-        Library contains n-amount (selected) canonical cubes (one per rotational equivalence class)
-        Each cube stores: edges (frozenset) + ID
-        
-    Remark: 
+Mathematical Foundation:
+- Cube: 8 vertices in {0,1}³, 12 edges, 24 rotational symmetries
+- Edge subsets: 4095 non-empty configurations → 217 canonical forms
+- Base64 encoding: 64 symbols mapped to most frequent canonical cubes
 """
 
-# globals
-APPV_MAIN = 0 # main version
-APPV_SUB_ = 5 # sub version
-APPV_REV  = 0 # revision
+# Version constants
+VERSION = "1.5.0"
+APPV_MAIN, APPV_SUB, APPV_REV = 1, 5, 0
+
+# Encoding constants
+DEFAULT_ENCODING = "utf-8"
+B64_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+EXPECTED_CANONICAL_CUBES = 217
+BASE64_SYMBOL_COUNT = 65  # Including padding
 
 
-DEFAULT_ENCODER: str = "utf-8"
+class VoxelianError(Exception):
+    """Base exception for Voxelian encoder operations."""
+    pass
 
-B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 
 class CubeRotations:
+    """Handles generation and application of cube rotation mappings."""
+    
     def __init__(self):
-        # cube vertices in integer coordinates
+        # Cube vertices in integer coordinates
         self.vertices = np.array([
-            [0,0,0],[1,0,0],[1,1,0],[0,1,0],
-            [0,0,1],[1,0,1],[1,1,1],[0,1,1]
+            [0,0,0], [1,0,0], [1,1,0], [0,1,0],
+            [0,0,1], [1,0,1], [1,1,1], [0,1,1]
         ])
-        # edges defined as vertex index pairs
+        
+        # Edges defined as vertex index pairs
         self.edges = [
-            (0,1),(1,2),(2,3),(3,0),
-            (4,5),(5,6),(6,7),(7,4),
-            (0,4),(1,5),(2,6),(3,7)
+            (0,1), (1,2), (2,3), (3,0),  # bottom face
+            (4,5), (5,6), (6,7), (7,4),  # top face
+            (0,4), (1,5), (2,6), (3,7)   # vertical edges
         ]
-        self.rotations = self.generate_rotations()
+        
+        self.rotations = self._generate_rotations()
+        self._validate_rotations()
 
-    def generate_rotations(self):
-        mats = []
-        seen = set()
-        verts = self.vertices
+    def _generate_rotations(self) -> List[Dict[int, int]]:
+        """Generate all 24 valid cube rotation mappings."""
+        rotations = []
+        seen_configurations = set()
+        
+        # Standard rotation matrices for cube symmetries
+        axis_permutations = [
+            [0,1,2], [0,2,1], [1,0,2], [1,2,0], [2,0,1], [2,1,0]
+        ]
+        sign_combinations = [
+            (1,1,1), (1,-1,-1), (-1,1,-1), (-1,-1,1)
+        ]
 
-        # predefined rotation matrices
-        # axis permutations + ±1 signs with det=1
-        axes_perms = [
-                [0,1,2],[0,2,1],
-                [1,0,2],[1,2,0],
-                [2,0,1],[2,1,0]
-                ]
-        signs = [(1,1,1),(1,-1,-1),
-                 (-1,1,-1),(-1,-1,1)
-                ]
-
-        for perm in axes_perms:
-            for sign in signs:
-                # build rotation matrix
-                mat = np.zeros((3,3), dtype=int)
+        for perm in axis_permutations:
+            for signs in sign_combinations:
+                rotation_matrix = np.zeros((3,3), dtype=int)
                 for i in range(3):
-                    mat[i, perm[i]] = sign[i]
-                # rotate around cube center
-                rotated = np.dot(verts - 0.5, mat.T) + 0.5
-                rotated = np.round(rotated).astype(int)  # integer-safe coordinates
-                key = tuple(rotated.flatten())
-                if key in seen:
+                    rotation_matrix[i, perm[i]] = signs[i]
+                
+                # Apply rotation around cube center
+                transformed_vertices = np.dot(self.vertices - 0.5, rotation_matrix.T) + 0.5
+                transformed_vertices = np.round(transformed_vertices).astype(int)
+                
+                # Check uniqueness
+                config_key = tuple(transformed_vertices.flatten())
+                if config_key in seen_configurations:
                     continue
-                seen.add(key)
-                # map rotated vertices to original vertex indices using dict lookup
-                coord_to_index = {tuple(v): i for i, v in enumerate(verts)}
-                vertex_map = {i: coord_to_index[tuple(rv)] for i, rv in enumerate(rotated)}
-                # map edges using vertex_map
-                mapping = {}
-                for i, (a, b) in enumerate(self.edges):
-                    va, vb = vertex_map[a], vertex_map[b]
-                    if (va, vb) in self.edges:
-                        mapping[i] = self.edges.index((va, vb))
+                seen_configurations.add(config_key)
+                
+                # Create vertex mapping
+                vertex_lookup = {tuple(v): i for i, v in enumerate(self.vertices)}
+                vertex_mapping = {i: vertex_lookup[tuple(tv)] 
+                                for i, tv in enumerate(transformed_vertices)}
+                
+                # Generate edge mapping
+                edge_mapping = {}
+                for edge_idx, (v1, v2) in enumerate(self.edges):
+                    mapped_v1, mapped_v2 = vertex_mapping[v1], vertex_mapping[v2]
+                    
+                    # Find corresponding edge in original configuration
+                    if (mapped_v1, mapped_v2) in self.edges:
+                        edge_mapping[edge_idx] = self.edges.index((mapped_v1, mapped_v2))
                     else:
-                        mapping[i] = self.edges.index((vb, va))
-                mats.append(mapping)
-                if len(mats) == 24:
-                    return mats
+                        edge_mapping[edge_idx] = self.edges.index((mapped_v2, mapped_v1))
+                
+                rotations.append(edge_mapping)
+                
+                if len(rotations) == 24:
+                    break
+            if len(rotations) == 24:
+                break
 
-        return mats
+        return rotations
 
-    def apply(self, cube_edges: frozenset[int], rotation_index: int) -> frozenset[int]:
-        perm = self.rotations[rotation_index]
-        return frozenset(perm[e] for e in cube_edges)
+    def _validate_rotations(self):
+        """Validate rotation correctness."""
+        if len(self.rotations) != 24:
+            raise VoxelianError(f"Invalid rotation count: {len(self.rotations)} (expected 24)")
+        
+        for i, rotation in enumerate(self.rotations):
+            if len(rotation) != 12 or set(rotation.values()) != set(range(12)):
+                raise VoxelianError(f"Invalid rotation mapping at index {i}")
+
+    def apply_rotation(self, cube_edges: Set[int], rotation_idx: int) -> Set[int]:
+        """Apply rotation transformation to cube edges."""
+        if not 0 <= rotation_idx < len(self.rotations):
+            raise VoxelianError(f"Invalid rotation index: {rotation_idx}")
+        
+        rotation_map = self.rotations[rotation_idx]
+        return {rotation_map[edge] for edge in cube_edges}
+
 
 class Cube:
-    def __init__(self, edges: frozenset[int], id: int | None = None):
-        self.edges = edges
-        self.id = id
+    """Represents a cube with specific edge configuration."""
+    
+    def __init__(self, edges: Set[int], cube_id: Optional[int] = None):
+        if not isinstance(edges, (set, frozenset)):
+            edges = set(edges)
+        
+        # Validate edge indices
+        invalid_edges = edges - set(range(12))
+        if invalid_edges:
+            raise VoxelianError(f"Invalid edge indices: {invalid_edges}")
+        
+        self.edges = frozenset(edges)
+        self.id = cube_id
 
-    def canonical(self, rot: CubeRotations) -> "Cube":
-        candidates = []
-        for i in range(len(rot.rotations)):
-            rotated_edges = rot.apply(self.edges, i)
-            # convert to sorted tuple for deterministic comparison
-            candidates.append(tuple(sorted(rotated_edges)))
-        # lexicographic min
-        min_edges = min(candidates)
-        return Cube(frozenset(min_edges))
+    def get_canonical_form(self, rotations: CubeRotations) -> "Cube":
+        """Compute canonical (lexicographically minimal) form."""
+        canonical_candidates = []
+        
+        for rotation_idx in range(len(rotations.rotations)):
+            rotated_edges = rotations.apply_rotation(self.edges, rotation_idx)
+            canonical_candidates.append(tuple(sorted(rotated_edges)))
+        
+        minimal_form = min(canonical_candidates)
+        return Cube(frozenset(minimal_form), self.id)
+
+    def __repr__(self) -> str:
+        edge_list = sorted(list(self.edges))
+        return f"Cube(id={self.id}, edges={edge_list})"
+
 
 class CubeLibrary:
-    """ Library logic
-        1. Generate ALL possible edge subsets (brute force completeness)
-        2. Compute canonical form for each via rotation group action  
-        3. Remove only rotational duplicates (no other filtering)
-        4. Result: 217 mathematically verified unique equivalence classes
-    """
+    """Manages generation and storage of canonical cube configurations."""
+    
     def __init__(self, rotations: CubeRotations):
         self.rotations = rotations
-        self.cubes: list[Cube] = []
-    def generate_library(self):
-        all_edges = list(range(12))
-        seen = set()
+        self.canonical_cubes: List[Cube] = []
+        self._edge_to_cube_map: Dict[frozenset, int] = {}
+
+    def generate_canonical_library(self) -> None:
+        """Generate all rotationally distinct cube configurations."""
+        if self.canonical_cubes:
+            return  # Already generated
+        
+        seen_canonical_forms = set()
         cube_id = 0
 
-        def powerset(edges):
-            return chain.from_iterable(combinations(edges, r) for r in range(1, 13))
+        # Generate all non-empty edge subsets
+        all_edges = list(range(12))
+        for subset_size in range(1, 13):
+            for edge_subset in combinations(all_edges, subset_size):
+                cube = Cube(edge_subset)
+                canonical_cube = cube.get_canonical_form(self.rotations)
+                
+                if canonical_cube.edges not in seen_canonical_forms:
+                    canonical_cube.id = cube_id
+                    self.canonical_cubes.append(canonical_cube)
+                    self._edge_to_cube_map[canonical_cube.edges] = cube_id
+                    seen_canonical_forms.add(canonical_cube.edges)
+                    cube_id += 1
 
-        for subset in powerset(all_edges):
-            cube = Cube(frozenset(subset))
-            canonical_cube = cube.canonical(self.rotations)
-            # Use the canonical frozenset directly as the seen key
-            if canonical_cube.edges not in seen:
-                canonical_cube.id = cube_id
-                cube_id += 1
-                self.cubes.append(canonical_cube)
-                seen.add(canonical_cube.edges)
-       
-class Encoder:
-    def __init__(self, rotations=None, library=None):
-        from encoder import Cube, CubeRotations, CubeLibrary
+        if len(self.canonical_cubes) != EXPECTED_CANONICAL_CUBES:
+            raise VoxelianError(
+                f"Canonical library size mismatch: {len(self.canonical_cubes)} "
+                f"(expected {EXPECTED_CANONICAL_CUBES})"
+            )
 
-        # Initialize rotations and library if not provided
-        self.rotations = rotations or CubeRotations()
-        self.library = library or CubeLibrary(self.rotations)
-        if not self.library.cubes:
-            self.library.generate_library()
+    def get_cube_by_id(self, cube_id: int) -> Cube:
+        """Retrieve cube by canonical ID."""
+        if not 0 <= cube_id < len(self.canonical_cubes):
+            raise VoxelianError(f"Invalid cube ID: {cube_id}")
+        return self.canonical_cubes[cube_id]
 
-        # Build a quick lookup: canonical frozenset -> cube ID
-        self.canon_lookup = {cube.edges: cube.id for cube in self.library.cubes}
-
-        # ##########################################################
-        # Encoding symbol space allocation type
-        # Workflow : data → Base64 → 64 symbols → 64 cubes → product
+    def get_canonical_id(self, edges: Set[int]) -> int:
+        """Get canonical ID for edge configuration."""
+        cube = Cube(edges)
+        canonical_cube = cube.get_canonical_form(self.rotations)
         
-        # Base 16 (Hexadecimal)     : 7.4% coverage
-        # Base 64 (default)         : 29.5% coverage
-        # Base 128 (ASCII)          : 59% coverage
+        if canonical_cube.edges not in self._edge_to_cube_map:
+            raise VoxelianError(f"Edge configuration not in canonical library: {edges}")
         
-        # ##########################################################
-        # Base32
-        #self.symbol_to_cube = {}
-        #cubes_list = list(self.library.cubes)
-        #for i in range(min(256, len(cubes_list))):
-        #    self.symbol_to_cube[i] = cubes_list[i]
-        
-        # ##########################################################
-        # Base64 
-        self.symbol_to_cube = {}
-        cubes_list = list(self.library.cubes)
-        for i, char in enumerate(B64_CHARS):
-            # Maps 64 chars to first 64 cubes
-            self.symbol_to_cube[char] = cubes_list[i]
-  
-    def encode_b64_char(self, b64_char: str) -> int:
-        if b64_char not in self.symbol_to_cube:
-            raise ValueError(f"invalid base64 character '{b64_char}'")
-        cube = self.symbol_to_cube[b64_char]
-        return cube.id
+        return self._edge_to_cube_map[canonical_cube.edges]
+
+
+class ChecksumValidator:
+    """Handles checksum computation and validation for cube sequences."""
     
-    def encode_data(self, binary_data: bytes, encoding = 'ascii') -> List[int]:
-        b64_string = base64.b64encode(binary_data).decode(encoding)
-        return [self.encode_b64_char(char) for char in b64_string]
+    def __init__(self, cube_library: CubeLibrary):
+        self.cube_library = cube_library
+        self._checksum_lut = self._build_checksum_lookup()
+
+    def _build_checksum_lookup(self) -> List[int]:
+        """Build lookup table for cube checksum values."""
+        checksum_values = []
         
+        for cube in self.cube_library.canonical_cubes:
+            # Convert edge set to 12-bit bitmask
+            edge_bitmask = 0
+            for edge_idx in cube.edges:
+                edge_bitmask |= (1 << edge_idx)
+            
+            # Use low byte for checksum
+            checksum_values.append(edge_bitmask & 0xFF)
         
-    def decode_data(self, cube_ids: List[int], encoding = 'ascii') -> bytes:
-        reverse_lookup = {v.id: k for k, v in self.symbol_to_cube.items()}
-        b64_string = ''.join(reverse_lookup[cube_id] for cube_id in cube_ids)
-        return base64.b64decode(b64_string.encode(encoding))
+        return checksum_values
 
-    def decode_id(self, cube_id: int) -> Cube:
-        """Get the Cube object from its canonical ID"""
-        return next(c for c in self.library.cubes if c.id == cube_id)
+    def compute_checksum(self, cube_ids: List[int]) -> int:
+        """Compute XOR checksum for cube ID sequence."""
+        if not cube_ids:
+            return 0
+        
+        checksum = 0
+        for cube_id in cube_ids:
+            if not 0 <= cube_id < len(self._checksum_lut):
+                raise VoxelianError(f"Invalid cube ID for checksum: {cube_id}")
+            checksum ^= self._checksum_lut[cube_id]
+        
+        return checksum
 
-    def get_meta(self):
-        return CubeMetadata(
-                encoder_version=f"Voxelian.{APPV_MAIN}.{APPV_SUB_}.{APPV_REV}",
-                original_size=len(message),
-                cube_count=len(self.library.cubes),
-                encoding_type="base64"
-                )
+    def validate_checksum(self, cube_ids: List[int], expected_checksum: int) -> bool:
+        """Validate cube sequence against expected checksum."""
+        try:
+            computed_checksum = self.compute_checksum(cube_ids)
+            return computed_checksum == expected_checksum
+        except VoxelianError:
+            return False
 
-class Tester(unittest.TestCase):
-    def setUp(self):
-        from encoder import Cube, CubeRotations, CubeLibrary
+
+class VoxelianEncoder:
+    """Main encoder class for Voxelian data encoding/decoding."""
+    
+    def __init__(self):
         self.rotations = CubeRotations()
         self.library = CubeLibrary(self.rotations)
-        self.library.generate_library()
+        self.library.generate_canonical_library()
+        self.checksum_validator = ChecksumValidator(self.library)
+        
+        # Build Base64 symbol mapping (first 65 canonical cubes)
+        self._symbol_to_cube = {}
+        self._cube_to_symbol = {}
+        
+        for i, symbol in enumerate(B64_CHARSET):
+            if i < len(self.library.canonical_cubes):
+                cube = self.library.canonical_cubes[i]
+                self._symbol_to_cube[symbol] = cube
+                self._cube_to_symbol[cube.id] = symbol
 
-    def test_rotation_count(self):
-        """Ensure exactly 24 unique rotations"""
-        self.assertEqual(len(self.rotations.rotations), 24)
+    def encode_text(self, text: str, encoding: str = DEFAULT_ENCODING) -> List[int]:
+        """Encode text string to cube ID sequence."""
+        try:
+            binary_data = text.encode(encoding)
+            return self.encode_binary(binary_data, encoding)
+        except UnicodeEncodeError as e:
+            raise VoxelianError(f"Text encoding error: {e}")
 
-    def test_vertex_mapping(self):
-        """Each rotated vertex maps to original vertex"""
-        verts = self.rotations.vertices
-        for perm in self.rotations.rotations:
-            for e in perm.values():
-                self.assertIn(e, range(12))
+    def encode_binary(self, data: bytes, encoding: str = 'ascii') -> List[int]:
+        """Encode binary data via Base64 intermediate representation."""
+        try:
+            base64_string = base64.b64encode(data).decode(encoding)
+            return [self._get_cube_id_for_symbol(char) for char in base64_string]
+        except Exception as e:
+            raise VoxelianError(f"Binary encoding error: {e}")
 
-    def test_canonical_consistency(self):
-        """Two cubes that are rotations of each other have same canonical form"""
-        cube1 = Cube(frozenset({0, 1, 2}))
-        # rotate cube 0 by first rotation
-        rotated_edges = Cube(frozenset({self.rotations.rotations[0][e] for e in cube1.edges}))
-        self.assertEqual(cube1.canonical(self.rotations).edges,
-                         rotated_edges.canonical(self.rotations).edges)
+    def decode_to_binary(self, cube_ids: List[int], encoding: str = 'ascii') -> bytes:
+        """Decode cube ID sequence to binary data."""
+        try:
+            # Validate all cube IDs first
+            for cube_id in cube_ids:
+                if cube_id not in self._cube_to_symbol:
+                    raise VoxelianError(f"Cube ID not in Base64 mapping: {cube_id}")
+            
+            # Reconstruct Base64 string
+            base64_string = ''.join(self._cube_to_symbol[cube_id] for cube_id in cube_ids)
+            return base64.b64decode(base64_string.encode(encoding))
+        except Exception as e:
+            raise VoxelianError(f"Decoding error: {e}")
 
-    def test_library_uniqueness(self):
-        """All cubes in library have unique canonical edges"""
-        seen = set()
-        for cube in self.library.cubes:
-            self.assertNotIn(cube.edges, seen)
-            seen.add(cube.edges)
+    def decode_to_text(self, cube_ids: List[int], encoding: str = DEFAULT_ENCODING) -> str:
+        """Decode cube ID sequence to text string."""
+        binary_data = self.decode_to_binary(cube_ids)
+        try:
+            return binary_data.decode(encoding)
+        except UnicodeDecodeError as e:
+            raise VoxelianError(f"Text decoding error: {e}")
 
-    def test_library_size(self):
-        """Check that library has expected number of canonical cubes"""
-        expected_canonical_cubes = 217  
-        self.assertEqual(len(self.library.cubes), expected_canonical_cubes)
+    def _get_cube_id_for_symbol(self, symbol: str) -> int:
+        """Get cube ID for Base64 symbol."""
+        if symbol not in self._symbol_to_cube:
+            raise VoxelianError(f"Invalid Base64 symbol: '{symbol}'")
+        return self._symbol_to_cube[symbol].id
+
+    def get_cube_by_id(self, cube_id: int) -> Cube:
+        """Retrieve cube object by ID."""
+        return self.library.get_cube_by_id(cube_id)
+
+    def compute_checksum(self, cube_ids: List[int]) -> int:
+        """Compute checksum for cube sequence."""
+        return self.checksum_validator.compute_checksum(cube_ids)
+
+    def validate_checksum(self, cube_ids: List[int], checksum: int) -> bool:
+        """Validate cube sequence checksum."""
+        return self.checksum_validator.validate_checksum(cube_ids, checksum)
+
+    
+    def get_encoding_metadata(self, original_data: bytes) -> CubeMetadata:
+        """Generate metadata for encoding operation."""
+        return CubeMetadata(
+            encoder_version=f"Voxelian.{VERSION}",
+            original_size=len(original_data),
+            cube_count=len(self.library.canonical_cubes),
+            encoding_type="base64"
+        )
+
+
+class VoxelianCLI:
+    """Command-line interface for Voxelian encoder."""
+    
+    def __init__(self):
+        self.encoder = VoxelianEncoder()
+
+    def create_parser(self) -> argparse.ArgumentParser:
+        """Create command-line argument parser."""
+        parser = argparse.ArgumentParser(
+            description="Voxelian Encoder - Professional Data Encoding System",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog=f"""
+Examples:
+  {sys.argv[0]} --encode "Hello World"
+  {sys.argv[0]} --encode "Message" --checksum --visualize
+  {sys.argv[0]} --test
+  {sys.argv[0]} --encode "Data" --padding 32 --output encoded.vox
+            """
+        )
+        
+        # Input options
+        input_group = parser.add_mutually_exclusive_group()
+        input_group.add_argument(
+            "--encode", "--string", type=str, metavar="TEXT", 
+            dest="text_input", help="Text message to encode"
+        )
+        input_group.add_argument(
+            "--file", type=str, metavar="PATH",
+            help="Input file to encode"
+        )
+        input_group.add_argument(
+            "--test", action="store_true",
+            help="Run comprehensive unit tests"
+        )
+        
+        # Processing options
+        parser.add_argument(
+            "--padding", type=int, metavar="N",
+            help="Add N random padding characters"
+        )
+        parser.add_argument(
+            "--checksum", action="store_true",
+            help="Compute and validate checksum"
+        )
+        parser.add_argument(
+            "--visualize", "--vis", action="store_true",
+            help="Generate 3D visualization"
+        )
+        
+        # Output options
+        parser.add_argument(
+            "--output", "-o", type=str, metavar="FILE",
+            default="output.vox", help="Output file (default: output.vox)"
+        )
+        parser.add_argument(
+            "--encoding", type=str, default=DEFAULT_ENCODING,
+            help=f"Text encoding (default: {DEFAULT_ENCODING})"
+        )
+        
+        return parser
+
+    def run(self, args: Optional[List[str]] = None) -> int:
+        """Execute CLI with given arguments."""
+        print("=" * 50)
+        print("Running encoder...")
+        parser = self.create_parser()
+        parsed_args = parser.parse_args(args)
+        
+        try:
+            if parsed_args.test:
+                return self._run_tests()
+            
+            if not parsed_args.text_input and not parsed_args.file:
+                # Default: encode random message
+                message_text = generate_random_message(16, B64_CHARSET)
+                print(f"No input specified, using random message: '{message_text}'")
+            else:
+                message_text = self._get_input_text(parsed_args)
+            
+            # Apply padding if requested
+            if parsed_args.padding:
+                padding_text = generate_random_message(parsed_args.padding, B64_CHARSET)
+                message_text += padding_text
+                print(f"        padding: {parsed_args.padding}+")
+            return self._encode_and_process(message_text, parsed_args)
+            
+        except VoxelianError as e:
+            print(f"Encoding error: {e}")
+            return 1
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            return 2
+
+    def _get_input_text(self, args) -> str:
+        """Get input text from arguments or file."""
+        if args.text_input:
+            return args.text_input
+        elif args.file:
+            return read_file(args.file)
+        else:
+            raise VoxelianError("No input text or file specified")
+
+    def _encode_and_process(self, text: str, args) -> int:
+        """Encode text and process according to arguments."""
+        # Encode the message
+        original_data = text.encode(args.encoding)
+        cube_ids = self.encoder.encode_text(text, args.encoding)
+        
+        # Verify encoding integrity
+        decoded_data = self.encoder.decode_to_binary(cube_ids)
+        if decoded_data != original_data:
+            raise VoxelianError("Encoding verification failed")
+        
+        # Compute checksum if requested
+        checksum = None
+        if args.checksum:
+            checksum = self.encoder.compute_checksum(cube_ids)
+        
+        # Generate visualization if requested
+        if args.visualize:
+            print("  visualization: output.png")
+            visualize_message(self.encoder, original_data, cube_ids)
+        
+        # Serialize and save output
+        metadata = self.encoder.get_encoding_metadata(original_data)
+        serializer = CubeSerializer()
+        binary_output = serializer.serialize(cube_ids, metadata)
+        write_file(args.output, binary_output)
+        
+        # Print summary
+        print("=" * 50)
+        print("Result           : success")
+        print(f"Original size    : {len(original_data)} bytes")
+        print(f"Encoded cubes    : {len(cube_ids)}")
+        print(f"Unique cube IDs  : {len(set(cube_ids))}")
+        print(f"Serialized size  : {len(binary_output)} bytes")
+        if checksum is not None:
+            print(f"Checksum         : {checksum}")
+        print(f"Output file      : {args.output}")
+        
+        return 0
+
+    def _run_tests(self) -> int:
+        """Execute unit test suite."""
+        print("Running encoder test suite...")
+        print("=" * 50)
+        
+        # Discover and run tests
+        loader = unittest.TestLoader()
+        suite = loader.loadTestsFromTestCase(VoxelianTestSuite)
+        runner = unittest.TextTestRunner(verbosity=2)
+        result = runner.run(suite)
+        
+        return 0 if result.wasSuccessful() else 1
+
+
+class VoxelianTestSuite(unittest.TestCase):
+    """Comprehensive test suite for Voxelian encoder."""
+    
+    def setUp(self):
+        """Initialize test fixtures."""
+        self.encoder = VoxelianEncoder()
+
+    def test_rotation_generation(self):
+        """Test cube rotation generation."""
+        self.assertEqual(len(self.encoder.rotations.rotations), 24)
+        
+        # Test rotation uniqueness
+        rotation_signatures = []
+        for rotation in self.encoder.rotations.rotations:
+            signature = tuple(sorted(rotation.items()))
+            self.assertNotIn(signature, rotation_signatures)
+            rotation_signatures.append(signature)
+
+    def test_canonical_library_generation(self):
+        """Test canonical cube library."""
+        self.assertEqual(len(self.encoder.library.canonical_cubes), EXPECTED_CANONICAL_CUBES)
+        
+        # Test cube ID uniqueness
+        cube_ids = [cube.id for cube in self.encoder.library.canonical_cubes]
+        self.assertEqual(len(cube_ids), len(set(cube_ids)))
+
+    def test_basic_encoding_decoding(self):
+        """Test basic string encoding/decoding."""
+        test_strings = [
+            "Hello, World!",
+            "The quick brown fox jumps over the lazy dog",
+            "1234567890",
+            "!@#$%^&*()_+-=[]{}|;:,.<>?",
+            ""
+        ]
+        
+        for test_string in test_strings:
+            with self.subTest(test_string=test_string):
+                if test_string:  # Skip empty string for encoding
+                    cube_ids = self.encoder.encode_text(test_string)
+                    decoded_string = self.encoder.decode_to_text(cube_ids)
+                    self.assertEqual(test_string, decoded_string)
+
+    def test_checksum_functionality(self):
+        """Test checksum computation and validation."""
+        test_message = "Hello, World!"
+        cube_ids = self.encoder.encode_text(test_message)
+        
+        # Compute checksum
+        checksum = self.encoder.compute_checksum(cube_ids)
+        self.assertIsInstance(checksum, int)
+        self.assertTrue(0 <= checksum <= 255)
+        
+        # Validate correct checksum
+        self.assertTrue(self.encoder.validate_checksum(cube_ids, checksum))
+        
+        # Validate incorrect checksum
+        wrong_checksum = (checksum + 1) % 256
+        self.assertFalse(self.encoder.validate_checksum(cube_ids, wrong_checksum))
+
+    def test_error_handling(self):
+        """Test error handling for invalid inputs."""
+        # Test invalid cube ID
+        with self.assertRaises(VoxelianError):
+            self.encoder.get_cube_by_id(-1)
+        
+        with self.assertRaises(VoxelianError):
+            self.encoder.get_cube_by_id(1000)
+        
+        # Test invalid cube ID in checksum
+        with self.assertRaises(VoxelianError):
+            self.encoder.compute_checksum([-1])
+
+    def test_base64_symbol_coverage(self):
+        """Test Base64 symbol to cube mapping."""
+        # All Base64 symbols should be mappable
+        for symbol in B64_CHARSET:
+            cube_id = self.encoder._get_cube_id_for_symbol(symbol)
+            self.assertIsInstance(cube_id, int)
+            self.assertTrue(0 <= cube_id < len(self.encoder.library.canonical_cubes))
+
+
+def main():
+    """Main entry point for command-line usage."""
+    cli = VoxelianCLI()
+    return cli.run()
 
 
 if __name__ == "__main__":
-    # argument parser
-    parser = argparse.ArgumentParser(description="Voxelian console encoder")
-    parser.add_argument("--string", type=str, metavar="TEXT", help="Message phrase")
-    parser.add_argument("--vis", action='store_true', help="Render visualized presentation")
-    parser.add_argument("--test", action='store_true', help="Perform unit test")
-    args = parser.parse_args()
-    
-    if args.test:
-            print('Running unit test...')
-            unittest.main(argv=[''])
-            exit(0)
-        
-    if args.string:
-        message = args.string.encode(DEFAULT_ENCODER)
-    else:
-        random_str = generate_random_message(16)
-        message = random_str.encode(DEFAULT_ENCODER)
-        
-    # declare encoder
-    encoder = Encoder()
-    encoded_ids = encoder.encode_data(message)
-    decoded = encoder.decode_data(encoded_ids)
-    
-    if decoded == message:
-        print("Result success")
-        serializer = CubeSerializer()
-        # serialize
-        binary_data = serializer.serialize(encoded_ids, encoder.get_meta())
-        write_file('output.vox', binary_data)
-        print(f"Serialized size: {len(binary_data)} bytes")
-        print(f"Format info: {serializer.get_format_info(binary_data)}")
-        if args.vis:
-            visualize_message(encoder, decoded)
+    sys.exit(main())
