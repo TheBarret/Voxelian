@@ -77,5 +77,30 @@ Examples:
   encoder.py --encode "Data" --padding 32 --output encoded.vox
 ```
 
-Encoder saves 'output.vox' in local root folder, a serialized state of the 'encoded_ids' data for reversing the process.
+*encoder saves all output in local root folder*
 
+# Unit testing
+```
+python encoder.py --test
+==================================================
+Running encoder...
+Running encoder test suite...
+==================================================
+test_base64_symbol_coverage (__main__.VoxelianTestSuite)
+Test Base64 symbol to cube mapping. ... ok
+test_basic_encoding_decoding (__main__.VoxelianTestSuite)
+Test basic string encoding/decoding. ... ok
+test_canonical_library_generation (__main__.VoxelianTestSuite)
+Test canonical cube library. ... ok
+test_checksum_functionality (__main__.VoxelianTestSuite)
+Test checksum computation and validation. ... ok
+test_error_handling (__main__.VoxelianTestSuite)
+Test error handling for invalid inputs. ... ok
+test_rotation_generation (__main__.VoxelianTestSuite)
+Test cube rotation generation. ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 2.189s
+
+OK
+```
