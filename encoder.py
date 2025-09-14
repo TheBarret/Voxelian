@@ -13,7 +13,7 @@ from utils import CubeSerializer, CubeMetadata, generate_random_message, visuali
 
 """
 Voxelian Encoder
-Using Sol DeWit's cube model for data encoding with 217 canonical cubes.
+Using Sol LeWitt's cube model for data encoding with 217 canonical cubes.
 
 Mathematical Foundation:
 - Cube: 8 vertices in {0,1}³, 12 edges, 24 rotational symmetries
@@ -588,3 +588,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
