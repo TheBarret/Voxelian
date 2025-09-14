@@ -22,8 +22,7 @@ Mathematical Foundation:
 """
 
 # Version constants
-VERSION = "1.5.0"
-APPV_MAIN, APPV_SUB, APPV_REV = 1, 5, 0
+VERSION = "0.5.0"
 
 # Encoding constants
 DEFAULT_ENCODING = "utf-8"
@@ -588,4 +587,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     sys.exit(main())
