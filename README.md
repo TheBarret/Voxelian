@@ -50,24 +50,31 @@ flowchart TD
 ```
 # Usage
 ```
-python encoder.py -h
-usage: encoder.py [-h] [--string TEXT] [--vis] [--test]
+python encoder.py --h
+==================================================
+Running encoder...
+usage: encoder.py [-h] [--encode TEXT | --file PATH | --test] [--padding N] [--checksum] [--visualize] [--output FILE] [--encoding ENCODING]
 
-Voxelian console encoder
+Voxelian Encoder - Professional Data Encoding System
 
 options:
-  -h, --help     show this help message and exit
-  --string TEXT  Message phrase
-  --vis          Render visualized presentation
-  --test         Perform unit test
-```
+  -h, --help            show this help message and exit
+  --encode TEXT, --string TEXT
+                        Text message to encode
+  --file PATH           Input file to encode
+  --test                Run comprehensive unit tests
+  --padding N           Add N random padding characters
+  --checksum            Compute and validate checksum
+  --visualize, --vis    Generate 3D visualization
+  --output FILE, -o FILE
+                        Output file (default: output.vox)
+  --encoding ENCODING   Text encoding (default: utf-8)
 
-## Encoding a string
-```
-python encoder.py --vis --string 'Hello, World!'
-Result success
-Serialized size: 53 bytes
-Format info: {'format': 'Cube1', 'version': 1, 'cube_count': 20, 'size_bytes': 53, 'has_metadata': False}
+Examples:
+  encoder.py --encode "Hello World"
+  encoder.py --encode "Message" --checksum --visualize
+  encoder.py --test
+  encoder.py --encode "Data" --padding 32 --output encoded.vox
 ```
 
 Encoder saves 'output.vox' in local root folder, a serialized state of the 'encoded_ids' data for reversing the process.
