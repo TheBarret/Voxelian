@@ -1,15 +1,21 @@
 # core imports
+import sys
+import os
 import argparse
 import unittest
 import base64
 import numpy as np
 from typing import List, Dict, Set, Tuple, Optional
 from itertools import chain, combinations
-import sys
-import os
 
+# Visualizer imports
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.patches import Rectangle
+
+# Uilitie imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from utils import CubeSerializer, CubeMetadata, generate_random_message, visualize_message, write_file, read_file
+from utils import generate_random_message, write_file, read_file
 
 """
 Voxelian Encoder
@@ -22,13 +28,15 @@ Mathematical Foundation:
 """
 
 # Version constants
-VERSION = "0.5.0"
+VERSION             = "0.5.0"
 
 # Encoding constants
-DEFAULT_ENCODING = "utf-8"
-B64_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
-EXPECTED_CANONICAL_CUBES = 217
-BASE64_SYMBOL_COUNT = 65  # Including padding
+DEFAULT_ENCODING    = "utf-8"
+B64_CHARSET         = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+
+# cube settings
+CANONICAL_CUBES     = 217
+
 
 
 class VoxelianError(Exception):
@@ -189,10 +197,10 @@ class CubeLibrary:
                     seen_canonical_forms.add(canonical_cube.edges)
                     cube_id += 1
 
-        if len(self.canonical_cubes) != EXPECTED_CANONICAL_CUBES:
+        if len(self.canonical_cubes) != CANONICAL_CUBES:
             raise VoxelianError(
                 f"Canonical library size mismatch: {len(self.canonical_cubes)} "
-                f"(expected {EXPECTED_CANONICAL_CUBES})"
+                f"(expected {CANONICAL_CUBES})"
             )
 
     def get_cube_by_id(self, cube_id: int) -> Cube:
@@ -316,7 +324,7 @@ class VoxelianEncoder:
     def _get_cube_id_for_symbol(self, symbol: str) -> int:
         """Get cube ID for Base64 symbol."""
         if symbol not in self._symbol_to_cube:
-            raise VoxelianError(f"Invalid Base64 symbol: '{symbol}'")
+            raise VoxelianError(f"invalid base64 symbol: '{symbol}'")
         return self._symbol_to_cube[symbol].id
 
     def get_cube_by_id(self, cube_id: int) -> Cube:
@@ -331,20 +339,169 @@ class VoxelianEncoder:
         """Validate cube sequence checksum."""
         return self.checksum_validator.validate_checksum(cube_ids, checksum)
 
+class Visualizer():
+    def __init__(self, encoder: VoxelianEncoder):
+        self.encoder = encoder
+        
+    def visualize_message(self, message: bytes, cube_ids):
+        fig = plt.figure(figsize=(12, 6))
+        ax = fig.add_subplot(111, projection='3d')
+        
+        b64_string = message
+        encoded_ids = cube_ids
+        
+        base_vertices = np.array(self.encoder.rotations.vertices)
+        
+        # Dynamic grid calculation for better layout
+        total_chars = len(b64_string)
+        cubes_per_row = min(12, max(6, int(np.sqrt(total_chars * 1.5))))
+        num_rows = (total_chars + cubes_per_row - 1) // cubes_per_row
+        
+        # color schemes
+        vertex_color = '#1f77b4'
+        edge_colors = ['#cc1414', '#2dc80f', '#141dcc', '#c914cc']
     
-    def get_encoding_metadata(self, original_data: bytes) -> CubeMetadata:
-        """Generate metadata for encoding operation."""
-        return CubeMetadata(
-            encoder_version=f"Voxelian.{VERSION}",
-            original_size=len(original_data),
-            cube_count=len(self.library.canonical_cubes),
-            encoding_type="base64"
-        )
+        for i, (b64_char, cube_id) in enumerate(zip(b64_string, encoded_ids)):
+            cube = self.encoder.get_cube_by_id(cube_id)
+            
+            # grid position with enhanced spacing
+            row = i // cubes_per_row
+            col = i % cubes_per_row
+            
+            # spacing for better visual separation
+            offset = np.array([col * 2.0, -row * 2.0, 0])
+            
+            # vertices with enhanced styling
+            verts = base_vertices + offset
+            ax.scatter(verts[:,0], verts[:,1], verts[:,2], 
+                      color=vertex_color, s=5, alpha=0.8, edgecolors='black', linewidths=0.2)
+            
+            # interactive edges
+            edge_count = len(cube.edges)
+            edge_color = edge_colors[min(edge_count // 3, 3)]   # Color by density
+            edge_width = 1.0 + (edge_count / 12.0) * 1.5        # Thickness by connectivity
+            
+            for edge_idx in cube.edges:
+                a, b = self.encoder.rotations.edges[edge_idx] 
+                v1, v2 = verts[a], verts[b]
+                ax.plot([v1[0], v2[0]], [v1[1], v2[1]], [v1[2], v2[2]], 
+                       color=edge_color, linewidth=edge_width, alpha=0.85)
+        ax.set_xlabel('X Coordinate', fontweight='bold')
+        ax.set_ylabel('Y Coordinate', fontweight='bold') 
+        ax.set_zlabel('Z Coordinate', fontweight='bold')
+        ax.set_box_aspect([1, 1, 0.5])
+        
+        # Scientific title with statistics
+        original_size = len(message)
+        b64_size = len(b64_string)
+        compression_info = f"{original_size}→{b64_size} chars" if b64_size != original_size else f"{original_size} bytes"
+        ax.set_title(f'Data: {compression_info} | Cubes: {len(encoded_ids)}', fontsize=11, pad=20)
+        stats_text = (f'Encoding Statistics:\n'
+                     f'• Original bytes: {original_size}\n'
+                     f'• Base64 chars: {b64_size}\n' 
+                     f'• Cube instances: {len(encoded_ids)}\n'
+                     f'• Unique cube IDs: {len(set(encoded_ids))}\n'
+                     f'• Edge density range: {min(len(self.encoder.get_cube_by_id(cid).edges) for cid in encoded_ids)}-'
+                     f'{max(len(self.encoder.get_cube_by_id(cid).edges) for cid in encoded_ids)} edges')
+        
+        # position statistics in corner
+        fig.text(0.02, 0.98, stats_text, fontsize=9, verticalalignment='top',
+                 bbox=dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.8))
 
+        legend_elements = [
+            Rectangle((0, 0), 1, 1, facecolor=edge_colors[0], label='1-3'),
+            Rectangle((0, 0), 1, 1, facecolor=edge_colors[1], label='4-6'),
+            Rectangle((0, 0), 1, 1, facecolor=edge_colors[2], label='7-9'), 
+            Rectangle((0, 0), 1, 1, facecolor=edge_colors[3], label='10-12')
+        ]
+        ax.legend(handles=legend_elements, title='Edges', loc='upper right', bbox_to_anchor=(0.98, 0.98))
+        ax.view_init(elev=20, azim=15)
+        plt.tight_layout()
+        plt.savefig('output.png')
 
-class VoxelianCLI:
+class VoxelianTestSuite(unittest.TestCase):
+    """Comprehensive test suite for Voxelian encoder."""
+    
+    def setUp(self):
+        """Initialize test fixtures."""
+        self.encoder = VoxelianEncoder()
+
+    def test_rotation_generation(self):
+        """Test cube rotation generation."""
+        self.assertEqual(len(self.encoder.rotations.rotations), 24)
+        
+        # Test rotation uniqueness
+        rotation_signatures = []
+        for rotation in self.encoder.rotations.rotations:
+            signature = tuple(sorted(rotation.items()))
+            self.assertNotIn(signature, rotation_signatures)
+            rotation_signatures.append(signature)
+
+    def test_canonical_library_generation(self):
+        """Test canonical cube library."""
+        self.assertEqual(len(self.encoder.library.canonical_cubes), CANONICAL_CUBES)
+        
+        # Test cube ID uniqueness
+        cube_ids = [cube.id for cube in self.encoder.library.canonical_cubes]
+        self.assertEqual(len(cube_ids), len(set(cube_ids)))
+
+    def test_basic_encoding_decoding(self):
+        """Test basic string encoding/decoding."""
+        test_strings = [
+            "Hello, World!",                                # normal string
+            "The quick brown fox jumps over the lazy dog",  # normal string
+            "1234567890",                                   # numbers
+            "!@#$%^&*()_+-=[]{}|;:,.<>?",                   # symbols
+            " "                                             # single space
+        ]
+        
+        for test_string in test_strings:
+            with self.subTest(test_string=test_string):
+                if test_string:  # Skip empty string for encoding
+                    cube_ids = self.encoder.encode_text(test_string)
+                    decoded_string = self.encoder.decode_to_text(cube_ids)
+                    self.assertEqual(test_string, decoded_string)
+
+    def test_checksum_functionality(self):
+        """Test checksum computation and validation."""
+        test_message = "Hello, World!"
+        cube_ids = self.encoder.encode_text(test_message)
+        
+        # Compute checksum
+        checksum = self.encoder.compute_checksum(cube_ids)
+        self.assertIsInstance(checksum, int)
+        self.assertTrue(0 <= checksum <= 255)
+        
+        # Validate correct checksum
+        self.assertTrue(self.encoder.validate_checksum(cube_ids, checksum))
+        
+        # Validate incorrect checksum
+        wrong_checksum = (checksum + 1) % 256
+        self.assertFalse(self.encoder.validate_checksum(cube_ids, wrong_checksum))
+
+    def test_error_handling(self):
+        """Test error handling for invalid inputs."""
+        # Test invalid cube ID
+        with self.assertRaises(VoxelianError):
+            self.encoder.get_cube_by_id(-1)
+        
+        with self.assertRaises(VoxelianError):
+            self.encoder.get_cube_by_id(1000)
+        
+        # Test invalid cube ID in checksum
+        with self.assertRaises(VoxelianError):
+            self.encoder.compute_checksum([-1])
+
+    def test_base64_symbol_coverage(self):
+        """Test Base64 symbol to cube mapping."""
+        # All Base64 symbols should be mappable
+        for symbol in B64_CHARSET:
+            cube_id = self.encoder._get_cube_id_for_symbol(symbol)
+            self.assertIsInstance(cube_id, int)
+            self.assertTrue(0 <= cube_id < len(self.encoder.library.canonical_cubes))
+
+class Console:
     """Command-line interface for Voxelian encoder."""
-    
     def __init__(self):
         self.encoder = VoxelianEncoder()
 
@@ -353,13 +510,12 @@ class VoxelianCLI:
         parser = argparse.ArgumentParser(
             description="Voxelian Encoder",
             formatter_class=argparse.RawDescriptionHelpFormatter,
-            epilog=f"""
-Examples:
-  {sys.argv[0]} --encode "Hello World"
-  {sys.argv[0]} --encode "Message" --checksum --visualize
-  {sys.argv[0]} --test
-  {sys.argv[0]} --encode "Data" --padding 32 --output encoded.vox
-            """
+            epilog=f"""Examples:
+                      {sys.argv[0]} --encode "Hello World"
+                      {sys.argv[0]} --encode "Message" --checksum --visualize
+                      {sys.argv[0]} --test
+                      {sys.argv[0]} --encode "01234" --padding 32
+                                """
         )
         
         # Input options
@@ -427,7 +583,7 @@ Examples:
                 message_text += padding_text
                 print(f"        padding: {parsed_args.padding}+")
             return self._encode_and_process(message_text, parsed_args)
-            
+         
         except VoxelianError as e:
             print(f"Encoding error: {e}")
             return 1
@@ -436,13 +592,12 @@ Examples:
             return 2
 
     def _get_input_text(self, args) -> str:
-        """Get input text from arguments or file."""
         if args.text_input:
             return args.text_input
         elif args.file:
             return read_file(args.file)
         else:
-            raise VoxelianError("No input text or file specified")
+            raise VoxelianError("no valid input specified")
 
     def _encode_and_process(self, text: str, args) -> int:
         """Encode text and process according to arguments."""
@@ -453,7 +608,7 @@ Examples:
         # Verify encoding integrity
         decoded_data = self.encoder.decode_to_binary(cube_ids)
         if decoded_data != original_data:
-            raise VoxelianError("Encoding verification failed")
+            raise VoxelianError("Encoding failed [mismatch]")
         
         # Compute checksum if requested
         checksum = None
@@ -462,31 +617,23 @@ Examples:
         
         # Generate visualization if requested
         if args.visualize:
-            print("  visualization: output.png")
-            visualize_message(self.encoder, original_data, cube_ids)
-        
-        # Serialize and save output
-        metadata = self.encoder.get_encoding_metadata(original_data)
-        serializer = CubeSerializer()
-        binary_output = serializer.serialize(cube_ids, metadata)
-        write_file(args.output, binary_output)
+            vis = Visualizer(self.encoder)
+            vis.visualize_message(text, cube_ids)
         
         # Print summary
         print("=" * 50)
         print("Result           : success")
         print(f"Original size    : {len(original_data)} bytes")
         print(f"Encoded cubes    : {len(cube_ids)}")
-        print(f"Unique cube IDs  : {len(set(cube_ids))}")
-        print(f"Serialized size  : {len(binary_output)} bytes")
+        print(f"Unique IDs       : {len(set(cube_ids))}")
         if checksum is not None:
             print(f"Checksum         : {checksum}")
-        print(f"Output file      : {args.output}")
-        
+        print(f"Encoding         : {cube_ids}")
         return 0
 
     def _run_tests(self) -> int:
         """Execute unit test suite."""
-        print("Running encoder test suite...")
+        print("Running tests...")
         print("=" * 50)
         
         # Discover and run tests
@@ -498,94 +645,9 @@ Examples:
         return 0 if result.wasSuccessful() else 1
 
 
-class VoxelianTestSuite(unittest.TestCase):
-    """Comprehensive test suite for Voxelian encoder."""
-    
-    def setUp(self):
-        """Initialize test fixtures."""
-        self.encoder = VoxelianEncoder()
-
-    def test_rotation_generation(self):
-        """Test cube rotation generation."""
-        self.assertEqual(len(self.encoder.rotations.rotations), 24)
-        
-        # Test rotation uniqueness
-        rotation_signatures = []
-        for rotation in self.encoder.rotations.rotations:
-            signature = tuple(sorted(rotation.items()))
-            self.assertNotIn(signature, rotation_signatures)
-            rotation_signatures.append(signature)
-
-    def test_canonical_library_generation(self):
-        """Test canonical cube library."""
-        self.assertEqual(len(self.encoder.library.canonical_cubes), EXPECTED_CANONICAL_CUBES)
-        
-        # Test cube ID uniqueness
-        cube_ids = [cube.id for cube in self.encoder.library.canonical_cubes]
-        self.assertEqual(len(cube_ids), len(set(cube_ids)))
-
-    def test_basic_encoding_decoding(self):
-        """Test basic string encoding/decoding."""
-        test_strings = [
-            "Hello, World!",
-            "The quick brown fox jumps over the lazy dog",
-            "1234567890",
-            "!@#$%^&*()_+-=[]{}|;:,.<>?",
-            ""
-        ]
-        
-        for test_string in test_strings:
-            with self.subTest(test_string=test_string):
-                if test_string:  # Skip empty string for encoding
-                    cube_ids = self.encoder.encode_text(test_string)
-                    decoded_string = self.encoder.decode_to_text(cube_ids)
-                    self.assertEqual(test_string, decoded_string)
-
-    def test_checksum_functionality(self):
-        """Test checksum computation and validation."""
-        test_message = "Hello, World!"
-        cube_ids = self.encoder.encode_text(test_message)
-        
-        # Compute checksum
-        checksum = self.encoder.compute_checksum(cube_ids)
-        self.assertIsInstance(checksum, int)
-        self.assertTrue(0 <= checksum <= 255)
-        
-        # Validate correct checksum
-        self.assertTrue(self.encoder.validate_checksum(cube_ids, checksum))
-        
-        # Validate incorrect checksum
-        wrong_checksum = (checksum + 1) % 256
-        self.assertFalse(self.encoder.validate_checksum(cube_ids, wrong_checksum))
-
-    def test_error_handling(self):
-        """Test error handling for invalid inputs."""
-        # Test invalid cube ID
-        with self.assertRaises(VoxelianError):
-            self.encoder.get_cube_by_id(-1)
-        
-        with self.assertRaises(VoxelianError):
-            self.encoder.get_cube_by_id(1000)
-        
-        # Test invalid cube ID in checksum
-        with self.assertRaises(VoxelianError):
-            self.encoder.compute_checksum([-1])
-
-    def test_base64_symbol_coverage(self):
-        """Test Base64 symbol to cube mapping."""
-        # All Base64 symbols should be mappable
-        for symbol in B64_CHARSET:
-            cube_id = self.encoder._get_cube_id_for_symbol(symbol)
-            self.assertIsInstance(cube_id, int)
-            self.assertTrue(0 <= cube_id < len(self.encoder.library.canonical_cubes))
-
-
 def main():
-    """Main entry point for command-line usage."""
-    cli = VoxelianCLI()
-    return cli.run()
+    return Console().run()
 
 
 if __name__ == "__main__":
     sys.exit(main())
-
