@@ -37,13 +37,6 @@ B64_CHARSET         = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234
 # cube settings
 CANONICAL_CUBES     = 217
 
-
-
-class VoxelianError(Exception):
-    """Base exception for Voxelian encoder operations."""
-    pass
-
-
 class CubeRotations:
     """Handles generation and application of cube rotation mappings."""
     
@@ -650,4 +643,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     sys.exit(main())
