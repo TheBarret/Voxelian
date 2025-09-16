@@ -15,7 +15,7 @@ from matplotlib.patches import Rectangle
 
 # Uilitie imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from utils import generate_random_message, write_file, read_file
+from utils import generate_random_message, write_file, read_file, VoxelianError
 
 """
 Voxelian Encoder
@@ -645,3 +645,4 @@ def main():
 if __name__ == "__main__":
 
     sys.exit(main())
+
