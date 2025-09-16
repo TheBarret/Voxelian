@@ -8,6 +8,9 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from enum import IntEnum
 
+class VoxelianError(Exception):
+    pass
+
 def write_file(path: str, data: bytes):
     with open(path, "wb") as f:
         f.write(data)
@@ -26,3 +29,4 @@ def read_file(filename):
 def generate_random_message(length: int = 512, table: str = "") -> str:
     """Generate pseudo-random text message of fixed size."""
     return ''.join(secrets.choice(table) for _ in range(length))
+
