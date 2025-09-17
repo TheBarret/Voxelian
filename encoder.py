@@ -1,6 +1,7 @@
 # core imports
 import sys
 import os
+import time
 import argparse
 import unittest
 import base64
@@ -15,7 +16,7 @@ from matplotlib.patches import Rectangle
 
 # Uilitie imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from utils import generate_random_message, write_file, read_file, VoxelianError
+from utils import generate_random_message, write_file, read_file
 
 """
 Voxelian Encoder
@@ -36,6 +37,9 @@ B64_CHARSET         = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234
 
 # cube settings
 CANONICAL_CUBES     = 217
+
+class VoxelianError(Exception):
+    pass
 
 class CubeRotations:
     """Handles generation and application of cube rotation mappings."""
@@ -213,7 +217,7 @@ class CubeLibrary:
         return self._edge_to_cube_map[canonical_cube.edges]
 
 
-class ChecksumValidator:
+class Checksum:
     """Handles checksum computation and validation for cube sequences."""
     
     def __init__(self, cube_library: CubeLibrary):
@@ -264,7 +268,7 @@ class VoxelianEncoder:
         self.rotations = CubeRotations()
         self.library = CubeLibrary(self.rotations)
         self.library.generate_canonical_library()
-        self.checksum_validator = ChecksumValidator(self.library)
+        self.checksum_validator = Checksum(self.library)
         
         # Build Base64 symbol mapping (first 65 canonical cubes)
         self._symbol_to_cube = {}
@@ -492,6 +496,110 @@ class VoxelianTestSuite(unittest.TestCase):
             cube_id = self.encoder._get_cube_id_for_symbol(symbol)
             self.assertIsInstance(cube_id, int)
             self.assertTrue(0 <= cube_id < len(self.encoder.library.canonical_cubes))
+            
+    def test_edge_cases(self):
+        """Test edge cases for encoding/decoding."""
+        # Empty string
+        cube_ids = self.encoder.encode_text("")
+        decoded_string = self.encoder.decode_to_text(cube_ids)
+        self.assertEqual("", decoded_string)
+        
+        # Very long string
+        long_string = "A" * 1000
+        cube_ids = self.encoder.encode_text(long_string)
+        decoded_string = self.encoder.decode_to_text(cube_ids)
+        self.assertEqual(long_string, decoded_string)
+        
+        # Binary data with null bytes
+        binary_data = b'\x00\x01\x02\xFF'
+        cube_ids = self.encoder.encode_binary(binary_data)
+        decoded_data = self.encoder.decode_to_binary(cube_ids)
+        self.assertEqual(binary_data, decoded_data)
+
+    def test_cube_operations(self):
+        """Test cube-specific operations."""
+        # Test cube canonical form remains consistent
+        test_edges = {0, 1, 4, 5}
+        cube = Cube(test_edges)
+        canonical_cube = cube.get_canonical_form(self.encoder.rotations)
+        
+        # Applying the same rotation twice should give the same result
+        self.assertEqual(canonical_cube.edges, 
+                        cube.get_canonical_form(self.encoder.rotations).edges)
+        
+        # Test edge validation
+        with self.assertRaises(VoxelianError):
+            Cube({-1, 0, 1})  # Invalid edge index
+        
+        with self.assertRaises(VoxelianError):
+            Cube({0, 12, 1})  # Edge index out of bounds
+            
+            
+    def test_binary_round_trip(self):
+        """Test binary data encoding/decoding round-trip."""
+        test_data = [
+            b"",  # Empty
+            b"\x00",  # Null byte
+            b"\xFF\x00\xAA",  # Mixed bytes
+            os.urandom(100),  # Random data
+        ]
+        
+        for data in test_data:
+            with self.subTest(data=data):
+                cube_ids = self.encoder.encode_binary(data)
+                decoded_data = self.encoder.decode_to_binary(cube_ids)
+                self.assertEqual(data, decoded_data)
+
+    def test_checksum_edge_cases(self):
+        """Test checksum with edge cases."""
+        # Empty list
+        self.assertEqual(self.encoder.compute_checksum([]), 0)
+        
+        # Single cube
+        single_id = [0]
+        checksum = self.encoder.compute_checksum(single_id)
+        self.assertTrue(self.encoder.validate_checksum(single_id, checksum))
+        
+        # All zeros (XOR identity)
+        zero_checksum = self.encoder.compute_checksum([0, 0, 0])
+        self.assertEqual(zero_checksum, self.encoder.checksum_validator._checksum_lut[0])
+        
+        
+    def test_library_consistency(self):
+        """Test library consistency."""
+        # All cubes should have unique edge sets
+        edge_sets = set()
+        for cube in self.encoder.library.canonical_cubes:
+            self.assertNotIn(cube.edges, edge_sets)
+            edge_sets.add(cube.edges)
+        
+        # All cubes should have valid IDs
+        for i, cube in enumerate(self.encoder.library.canonical_cubes):
+            self.assertEqual(cube.id, i)
+            retrieved_cube = self.encoder.library.get_cube_by_id(i)
+            self.assertEqual(cube.edges, retrieved_cube.edges)
+            
+    def test_performance(self):
+        """Test encoding/decoding performance with large data."""
+        # Generate large data
+        large_data = "A" * 100000
+        
+        # Time encoding
+        start_time = time.time()
+        cube_ids = self.encoder.encode_text(large_data)
+        encode_time = time.time() - start_time
+        
+        # Time decoding
+        start_time = time.time()
+        decoded_text = self.encoder.decode_to_text(cube_ids)
+        decode_time = time.time() - start_time
+        
+        # Verify correctness
+        self.assertEqual(large_data, decoded_text)
+        
+        # Performance thresholds (adjust as needed)
+        self.assertLess(encode_time, 5.0, "Encoding too slow")
+        self.assertLess(decode_time, 5.0, "Decoding too slow")
 
 class Console:
     """Command-line interface for Voxelian encoder."""
@@ -643,6 +751,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     sys.exit(main())
-
