@@ -2,8 +2,7 @@
 A Sol Lewitt's Open Cube encoder model  
 This is a work in progress, the code might change in the future.  
 
-
-<img width="930" height="674" alt="image" src="https://github.com/user-attachments/assets/f6f2a905-ac3c-48d0-a63f-d6fa0bd41a52" />  
+<img width="930" height="674" alt="output" src="https://github.com/user-attachments/assets/4bf2a7e1-0ea0-4a2f-93de-2d8521a3a8a7" />
 
 ##
 > Screenshot shows the equivalent of 'Hello, World!'  
