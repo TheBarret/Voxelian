@@ -8,6 +8,19 @@ This is a work in progress, the code might change in the future.
 ##
 > Screenshot shows the equivalent of 'Hello, World!'  
 
+```
+python encoder.py --string "Hello, World!" --checksum --vis
+==================================================
+Running encoder...
+==================================================
+Result           : success
+Original size    : 13 bytes
+Encoded cubes    : 20
+Unique IDs       : 16
+Checksum         : 118
+Encoding         : [18, 6, 21, 44, 27, 6, 60, 44, 8, 5, 29, 47, 28, 38, 49, 36, 8, 16, 64, 64]
+```
+
 Using Sol Lewitt's open cube model for data encoding using 217 unique cubes, not the theoretical estimate 144.  
 This encoder utilizes base64 to condense the character table as an intermediate layer and have a flexible input range,  
 this does result in only 29.5% coverage(*) space.  
