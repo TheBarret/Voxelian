@@ -52,14 +52,12 @@ flowchart TD
     K -- No --> D
     K -- Yes --> L[Output Library<br>N Unique Canonical Cubes]
 ```
+
 # Usage
 ```
-python encoder.py --h
-==================================================
-Running encoder...
 usage: encoder.py [-h] [--encode TEXT | --file PATH | --test] [--padding N] [--checksum] [--visualize] [--output FILE] [--encoding ENCODING]
 
-Voxelian Encoder - Professional Data Encoding System
+Voxelian Encoder
 
 options:
   -h, --help            show this help message and exit
@@ -75,10 +73,11 @@ options:
   --encoding ENCODING   Text encoding (default: utf-8)
 
 Examples:
-  encoder.py --encode "Hello World"
-  encoder.py --encode "Message" --checksum --visualize
-  encoder.py --test
-  encoder.py --encode "Data" --padding 32 --output encoded.vox
+                      encoder.py --encode "Hello World"
+                      encoder.py --encode "Message" --checksum --visualize
+                      encoder.py --test
+                      encoder.py --encode "01234" --padding 32
+
 ```
 
 *encoder saves all output in local root folder*
