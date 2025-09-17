@@ -14,14 +14,14 @@ this does result in only 29.5% coverage(*) space.
 
 # Encoding Density & Coverage
 
-<img width="800" alt="image" src="https://github.com/user-attachments/assets/82a1a797-5720-4267-a7f2-4f058ef2332d" />  
+<img width="800" alt="image" src="https://github.com/user-attachments/assets/82a1a797-5720-4267-a7f2-4f058ef2332d" />   
+  
+(the first few blocks appear to have no edges, that's because the edges (red) are same size as the 'box' they got drawn into.)
 
 The encoder's base principle is what determines the coverage length within the cube space available.  
 You could technically introduce an encryption layer as well providing you with extra security.  
 
-
-
-
+##
 ```
  Base 16 (Hexadecimal)     : 7.4% coverage
  Base 64 (default)         : 29.5% coverage
