@@ -84,27 +84,49 @@ Examples:
 *encoder saves all output in local root folder*
 
 # Unit testing
+
+> Rotation generation: Tests that all 24 rotations are generated and are unique>  
+> Canonical library: Verifies the correct number of canonical cubes and unique IDs  
+> Basic encoding/decoding: Tests various string types (normal, numbers, symbols)  
+> Checksum functionality: Tests both valid and invalid checksums, Try odd inputs (All zeros (XOR identity))  
+> Error handling: Tests invalid cube IDs  
+> Base64 coverage: Tests all Base64 symbols are mappable  
+> Input Data: Edge Case & Round trip Testing & Consistency with same rotation twice should give the same result  
+> Performance test, 100000 characters in under 5 seconds  
+    
 ```
 python encoder.py --test
 ==================================================
 Running encoder...
-Running encoder test suite...
+Running tests...
 ==================================================
 test_base64_symbol_coverage (__main__.VoxelianTestSuite)
 Test Base64 symbol to cube mapping. ... ok
 test_basic_encoding_decoding (__main__.VoxelianTestSuite)
 Test basic string encoding/decoding. ... ok
+test_binary_round_trip (__main__.VoxelianTestSuite)
+Test binary data encoding/decoding round-trip. ... ok
 test_canonical_library_generation (__main__.VoxelianTestSuite)
 Test canonical cube library. ... ok
+test_checksum_edge_cases (__main__.VoxelianTestSuite)
+Test checksum with edge cases. ... ok
 test_checksum_functionality (__main__.VoxelianTestSuite)
 Test checksum computation and validation. ... ok
+test_cube_operations (__main__.VoxelianTestSuite)
+Test cube-specific operations. ... ok
+test_edge_cases (__main__.VoxelianTestSuite)
+Test edge cases for encoding/decoding. ... ok
 test_error_handling (__main__.VoxelianTestSuite)
 Test error handling for invalid inputs. ... ok
+test_library_consistency (__main__.VoxelianTestSuite)
+Test library consistency. ... ok
+test_performance (__main__.VoxelianTestSuite)
+Test encoding/decoding performance with large data. ... ok
 test_rotation_generation (__main__.VoxelianTestSuite)
 Test cube rotation generation. ... ok
 
 ----------------------------------------------------------------------
-Ran 6 tests in 2.189s
+Ran 12 tests in 4.417s
 
 OK
 ```
