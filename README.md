@@ -1,6 +1,7 @@
 # Voxelian (WIP)
 A Sol Lewitt's Open Cube encoder model  
 This is a work in progress, the code might change in the future.  
+Inpsired by https://youtu.be/_BrFKp-U8GI
 
 <img width="930" height="674" alt="output" src="https://github.com/user-attachments/assets/4bf2a7e1-0ea0-4a2f-93de-2d8521a3a8a7" />
 
