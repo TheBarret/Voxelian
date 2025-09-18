@@ -95,16 +95,6 @@ Examples:
 *encoder saves all output in local root folder*
 
 # Unit testing
-
-> Rotation generation: Tests that all 24 rotations are generated and are unique>  
-> Canonical library: Verifies the correct number of canonical cubes and unique IDs  
-> Basic encoding/decoding: Tests various string types (normal, numbers, symbols)  
-> Checksum functionality: Tests both valid and invalid checksums, Try odd inputs (All zeros (XOR identity))  
-> Error handling: Tests invalid cube IDs  
-> Base64 coverage: Tests all Base64 symbols are mappable  
-> Input Data: Edge Case & Round trip Testing & Consistency with same rotation twice should give the same result  
-> Performance test, 100000 characters in under 5 seconds  
-    
 ```
 python encoder.py --test
 ==================================================
